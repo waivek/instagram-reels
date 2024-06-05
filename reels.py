@@ -49,7 +49,7 @@ def insert_post_into_db(post):
     connection.commit()
 
 def get_pickle_path():
-    return rel2abs('reels.json')
+    return rel2abs('data/reels.json')
 
 def save_posts(posts):
     pickle = jsonpickle.encode(posts, indent=4)
@@ -78,8 +78,7 @@ def post_to_dict(post):
 
 def download_handle(handle):
     def get_output_path(magic):
-        filename = f"resume_info_{magic}.json"
-        return rel2abs(filename)
+        return rel2abs(f"data/resume_info_{magic}.json")
     def save_function(frozen_node_iterator, path):
         json.dump(frozen_node_iterator._asdict(), open(path, 'w'), indent=4)
     def load_function(_, path):
@@ -88,12 +87,15 @@ def download_handle(handle):
     print("Instaloader context created")
     profile = Profile.from_username(L.context, handle)
     print("Profile created")
-    iterator_json_path = rel2abs('iterator.json')
     posts_iterator = profile.get_posts()
 
-    days = 10
+    days = 200
     stop_date = datetime.now() - timedelta(days=days)
-    table = load_posts_or_empty_list()
+    # table = load_posts_or_empty_list()
+    connection = Connection("data/instagram.db")
+    cursor = connection.execute("SELECT shortcode FROM posts")
+    shortcodes = [ row[0] for row in cursor.fetchall()]
+
     with resumable_iteration(
             context=L.context,
             iterator=posts_iterator,
@@ -105,18 +107,22 @@ def download_handle(handle):
             post.owner_profile.full_name
             date = post.date_utc
             shortcode = post.shortcode
-            shortcode_in_table = any(p.shortcode == shortcode for p in table)
-            if shortcode_in_table:
-                continue
-            table.append(post)
+            #shortcode_in_table = any(p.shortcode == shortcode for p in table)
+            shortcode_in_table = shortcode in shortcodes
             message = f"Processing post {shortcode} {timeago.format(date)}"
             print(message)
+            if shortcode_in_table:
+                continue
+            # table.append(post)
+            timer.start("insert_post_into_db")
+            insert_post_into_db(post)
+            timer.print("insert_post_into_db")
             if date < stop_date:
                 days_ago = (datetime.now() - date).days
                 print(f"Stop Date Days Count: {days}")
                 print(f"Stopping at {date} ({days_ago} days ago)")
                 break
-    save_posts(table)
+    # save_posts(table)
 
 
 def get_posts_table(handle):
@@ -292,9 +298,9 @@ def main():
     os.makedirs(data_directory, exist_ok=True)
     create_table()
     handle = 'dallasmavs'
-    json_pickle_file_to_sqlite_table()
+    # json_pickle_file_to_sqlite_table()
     # generate_schema()
-    # download_handle(handle)
+    download_handle(handle)
 
 if __name__ == "__main__":
     main()
